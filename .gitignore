@@ -1,0 +1,5 @@
+# I leave properties to make use of the headers from CUDA samples
+.vscode/*.log
+
+*.o
+particles

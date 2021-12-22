@@ -1,0 +1,25 @@
+#ifndef PARTICLES_H
+#define PARTICLES_H
+
+struct particles_t
+{
+    float* positions_x;
+    float* positions_y;
+
+    float* velocities_x;
+    float* velocities_y;
+
+    float* charges;
+    float* masses;
+};
+
+struct particle_t
+{
+    float2 position;
+    float2 velocity;
+
+    float charge;
+    float mass;
+};
+
+#endif // PARTICLES_H
