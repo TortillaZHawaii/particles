@@ -30,6 +30,8 @@
 #include <string.h>
 #include <math.h>
 
+#include <unistd.h> // getopt
+
 #ifdef _WIN32
 #  define WINDOWS_LEAN_AND_MEAN
 #  define NOMINMAX
@@ -77,8 +79,8 @@ char calculations_mode = GPU;
 
 uint particles_count = 1024 * 10;
 
-const uint window_width = 800;
-const uint window_height = 600;
+uint window_width = 800;
+uint window_height = 600;
 
 // to pause and play the simulation
 bool is_window_paused = false;
@@ -94,6 +96,11 @@ int *pArgc = NULL;
 char **pArgv = NULL;
 
 const char *sSDKsample = "CUDA Particle System";
+
+// usage
+void argumentsMessage();
+void processArguments(int argc, char** argv);
+void usage(char *name);
 
 // declaration, forward
 bool runTest(int argc, char **argv);
@@ -122,10 +129,80 @@ int main(int argc, char **argv)
     setenv ("DISPLAY", ":0", 0);
 #endif
 
+    processArguments(argc, argv);
+    argumentsMessage();
+
     runTest(argc, argv);
 
     printf("%s completed, returned %s\n", sSDKsample, (g_TotalErrors == 0) ? "OK" : "ERROR!");
     exit(g_TotalErrors == 0 ? EXIT_SUCCESS : EXIT_FAILURE); 
+}
+
+void argumentsMessage()
+{
+    printf("Calculations mode: %s\n", calculations_mode == GPU ? "GPU" : "CPU");
+    printf("Screen resolution: %dx%d\n", window_width, window_height);
+    printf("Total pixels: %d\n", window_width * window_height);
+    printf("Particles count: %d\n", particles_count);
+}
+
+void processArguments(int argc, char** argv)
+{
+    int c;
+    errno = 0;
+    char* strtol_leftover;
+
+    while((c = getopt(argc, argv, "cgp:w:h:p:")) != -1)
+    {
+        switch (c)
+        {
+        case 'c': // cpu mode
+            calculations_mode = CPU;
+            break;
+        case 'g': // gpu mode
+            calculations_mode = GPU;
+            break;
+
+        case 'w': // width
+            window_width = (uint)strtol(optarg, &strtol_leftover, 10);
+            if (errno != 0 || *strtol_leftover != '\0' || window_width < 1)
+            {
+                printf("Invalid window width\n");
+                usage(argv[0]);
+            }
+            break;
+
+        case 'h': // height
+            window_height = (uint)strtol(optarg, &strtol_leftover, 10);
+            if (errno != 0 || *strtol_leftover != '\0' || window_height < 1)
+            {
+                printf("Invalid window height\n");
+                usage(argv[0]);
+            }
+            break;
+
+        case 'p': // particles count
+            particles_count = (uint)strtol(optarg, &strtol_leftover, 10);
+            if (errno != 0 || *strtol_leftover != '\0' || particles_count < 1)
+            {
+                printf("Invalid particles count\n");
+                usage(argv[0]);
+            }
+            break;
+
+        case '?':
+        default:
+            usage(argv[0]);
+        }
+    }
+}
+
+void usage(char* name)
+{
+    fprintf(stderr, "Usage: %s [-c|-g] [-w WIDTH] [-h HEIGHT] [-p PARTICLES_COUNT]\n", name);
+    fprintf(stderr, " -c CPU mode\n");
+    fprintf(stderr, " -g GPU mode\n");
+    exit(EXIT_FAILURE);
 }
 
 void computeFPS()
