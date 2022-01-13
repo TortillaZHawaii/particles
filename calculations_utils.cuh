@@ -5,7 +5,7 @@
 #include <GL/freeglut.h>
 #include <helper_math.h>
 
-__device__ __host__ float2 calculateForce(particle_t p1, particle_t p2)
+__device__ __host__ float2 calculateForce(particle_t p1, particlePosCharge_t p2)
 {
     const float force_factor = 20.f;
 
@@ -65,12 +65,10 @@ __device__ __host__ void steerParticle(int id, particles_t particles,
         if(i == id)
             continue;
 
-        particle_t other =
+        particlePosCharge_t other =
         {
             /*position*/ make_float2(particles.positions_x[i], particles.positions_y[i]),
-            /*velocity*/ make_float2(particles.velocities_x[i], particles.velocities_y[i]),
             /*charge*/ particles.charges[i],
-            /*mass*/ particles.masses[i]
         };
 
         float2 force = calculateForce(particle, other);

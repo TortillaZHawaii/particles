@@ -22,4 +22,11 @@ struct particle_t
     float mass;
 };
 
+// things required to calculate force
+struct particlePosCharge_t
+{
+    float2 position;
+    float charge;
+};
+
 #endif // PARTICLES_H
