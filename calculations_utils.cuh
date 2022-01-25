@@ -1,9 +1,10 @@
 #ifndef CALCULATIONS_UTILS_H
 #define CALCULATIONS_UTILS_H
 
-#include "particles.cuh"
 #include <GL/freeglut.h>
 #include <helper_math.h>
+#include "particles.cuh"
+#include "cuda_utils.cuh"
 
 __device__ __host__ float2 calculateForce(particle_t p1, particlePosCharge_t p2)
 {
@@ -43,17 +44,21 @@ __device__ __host__ void keepInBounds(float2* velocity, float2* position,
 }
 
 
-__device__ __host__ void steerParticle(int id, particles_t particles,
+__device__ __host__ void steerParticle(int id, particles_t particles, float* charges,
     int particles_count, float dt, int screen_width, int screen_height)
 {
     if(id > particles_count)
         return;
 
+    // if we provide charges from the shm use them, otherwise use the ones from the particles
+    if(charges == NULL)
+        charges = particles.charges;
+
     particle_t particle =
     {
         /*position*/ make_float2(particles.positions_x[id], particles.positions_y[id]),
         /*velocity*/ make_float2(particles.velocities_x[id], particles.velocities_y[id]),
-        /*charge*/ particles.charges[id],
+        /*charge*/ charges[id],
         /*mass*/ particles.masses[id]
     };
 
@@ -68,7 +73,7 @@ __device__ __host__ void steerParticle(int id, particles_t particles,
         particlePosCharge_t other =
         {
             /*position*/ make_float2(particles.positions_x[i], particles.positions_y[i]),
-            /*charge*/ particles.charges[i],
+            /*charge*/ charges[i],
         };
 
         float2 force = calculateForce(particle, other);
@@ -109,11 +114,14 @@ __device__ __host__ void setPixel(int x, int y, int width, GLubyte r, GLubyte g,
     bitmap[index + 2] = b;
 }
 
-__device__ __host__ void colorBitmapFromParticles(int id, particles_t particles, int particles_count,
-    GLubyte *bitmap, int width, int height)
+__device__ __host__ void colorBitmapFromParticles(int id, particles_t particles, float* charges,
+    int particles_count, GLubyte *bitmap, int width, int height)
 {
     if(id > width * height)
         return;
+
+    if(charges == NULL)
+        charges = particles.charges;
     
     int x = id % width;
     int y = id / width;
@@ -125,7 +133,7 @@ __device__ __host__ void colorBitmapFromParticles(int id, particles_t particles,
     for(int i = 0; i < particles_count; ++i)
     {
         float2 position = make_float2(particles.positions_x[i], particles.positions_y[i]);
-        float charge = particles.charges[i];
+        float charge = charges[i];
 
         float2 distance = position - pixel_position;
 
@@ -154,25 +162,64 @@ __device__ __host__ void colorBitmapFromParticles(int id, particles_t particles,
     }
 }
 
+__device__ void dshm_prepareCharges(particles_t particles, int particles_count, float* charges, int id)
+{
+    int range = getBlocksCount(particles_count);
+
+    int start = id * range;
+    int end = MIN(start + range, particles_count);
+
+    //printf("%d %d %d %d\n", id, start, end, particles_count);
+
+    for(int i = start; i < end; ++i)
+    {
+        charges[i] = particles.charges[i];
+    }
+}
+
+__global__ void dshm_colorBitmapFromParticles(GLubyte *bitmap, int width, int height, particles_t particles, int particles_count)
+{
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    extern __shared__ float charges[];
+    dshm_prepareCharges(particles, particles_count, charges, threadIdx.x);
+
+    __syncthreads();
+
+    colorBitmapFromParticles(id, particles, NULL, particles_count, bitmap, width, height);
+}
+
+__global__ void dshm_steerParticles(particles_t particles, int particles_count, float dt, int screen_width, int screen_height)
+{
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+
+    extern __shared__ float charges[];
+    dshm_prepareCharges(particles, particles_count, charges, threadIdx.x);
+
+    __syncthreads();
+
+    steerParticle(id, particles, NULL, particles_count, dt, screen_width, screen_height);
+}
+
 __global__ void d_colorBitmapFromParticles(GLubyte *bitmap, int width, int height, particles_t particles, int particles_count)
 {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
 
-    colorBitmapFromParticles(id, particles, particles_count, bitmap, width, height);
+    colorBitmapFromParticles(id, particles, NULL, particles_count, bitmap, width, height);
 }
 
 __global__ void d_steerParticles(particles_t particles, int particles_count, float dt, int screen_width, int screen_height)
 {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
 
-    steerParticle(id, particles, particles_count, dt, screen_width, screen_height);
+    steerParticle(id, particles, NULL, particles_count, dt, screen_width, screen_height);
 }
 
 void h_colorBitmapFromParticles(GLubyte *bitmap, int width, int height, particles_t particles, int particles_count)
 {
     for(int i = 0; i < width * height; ++i)
     {
-        colorBitmapFromParticles(i, particles, particles_count, bitmap, width, height);
+        colorBitmapFromParticles(i, particles, NULL, particles_count, bitmap, width, height);
     }
 }
 
@@ -180,7 +227,7 @@ void h_steerParticles(particles_t particles, int particles_count, float dt, int 
 {
     for(int i = 0; i < particles_count; ++i)
     {
-        steerParticle(i, particles, particles_count, dt, screen_width, screen_height);
+        steerParticle(i, particles, NULL, particles_count, dt, screen_width, screen_height);
     }
 }
 

@@ -63,6 +63,7 @@
 #include <vector_types.h>
 #include <helper_math.h>
 
+#include "cuda_utils.cuh"
 #include "calculations_utils.cuh"
 #include "setup.cuh"
 
@@ -70,10 +71,10 @@
 
 #define REFRESH_DELAY 10 //ms
 
-#define BLOCK_SIZE 1024
 
 #define GPU 0
 #define CPU 1
+#define GPU_SHM 2
 
 char calculations_mode = GPU;
 
@@ -140,7 +141,8 @@ int main(int argc, char **argv)
 
 void argumentsMessage()
 {
-    printf("Calculations mode: %s\n", calculations_mode == GPU ? "GPU" : "CPU");
+    printf("Calculations mode: %s\n", calculations_mode == CPU ? "CPU" :
+        (calculations_mode == GPU ? "GPU" : "GPU SHM"));
     printf("Screen resolution: %dx%d\n", window_width, window_height);
     printf("Total pixels: %d\n", window_width * window_height);
     printf("Particles count: %d\n", particles_count);
@@ -152,7 +154,7 @@ void processArguments(int argc, char** argv)
     errno = 0;
     char* strtol_leftover;
 
-    while((c = getopt(argc, argv, "cgp:w:h:p:")) != -1)
+    while((c = getopt(argc, argv, "cgsp:w:h:p:")) != -1)
     {
         switch (c)
         {
@@ -161,6 +163,9 @@ void processArguments(int argc, char** argv)
             break;
         case 'g': // gpu mode
             calculations_mode = GPU;
+            break;
+        case 's': // gpu shm mode
+            calculations_mode = GPU_SHM;
             break;
 
         case 'w': // width
@@ -202,6 +207,7 @@ void usage(char* name)
     fprintf(stderr, "Usage: %s [-c|-g] [-w WIDTH] [-h HEIGHT] [-p PARTICLES_COUNT]\n", name);
     fprintf(stderr, " -c CPU mode\n");
     fprintf(stderr, " -g GPU mode\n");
+    fprintf(stderr, " -g GPU SHM mode (limited by shared memory size to 10240 particles)\n");
     exit(EXIT_FAILURE);
 }
 
@@ -284,7 +290,7 @@ bool runTest(int argc, char **argv)
     allocateParticlesOnHost(&h_particles, particles_count);
     randomizeParticles(&h_particles, particles_count, window_width, window_height);
 
-    if(calculations_mode == GPU)
+    if(calculations_mode == GPU || calculations_mode == GPU_SHM)
     {
         allocateParticlesOnDevice(&d_particles, particles_count);
         copyParticlesHtoD(&h_particles, &d_particles, particles_count);
@@ -299,11 +305,6 @@ bool runTest(int argc, char **argv)
     glutMainLoop();
 
     return true;
-}
-
-uint getBlocksCount(uint value)
-{
-    return value / BLOCK_SIZE + (value % BLOCK_SIZE ? 1 : 0);
 }
 
 void display()
@@ -321,7 +322,24 @@ void display()
 
         h_colorBitmapFromParticles(h_bitmap, window_width, window_height, h_particles, particles_count);
     }
-    else
+    else if(calculations_mode == GPU_SHM)
+    {
+        uint shmSize = particles_count * sizeof(float);
+
+        if(!is_window_paused)
+        {
+            uint particles_blocks_count = getBlocksCount(particles_count);
+            dshm_steerParticles<<<particles_blocks_count, BLOCK_SIZE, shmSize>>>
+                (d_particles, particles_count, dt, window_width, window_height);
+        }
+
+        uint pixels_blocks_count = getBlocksCount(window_width * window_height);
+        dshm_colorBitmapFromParticles<<<pixels_blocks_count, BLOCK_SIZE, shmSize>>>
+            (d_bitmap, window_width, window_height, d_particles, particles_count);
+
+        checkCudaErrors(cudaMemcpy(h_bitmap, d_bitmap, window_width * window_height * 3 * sizeof(GLubyte), cudaMemcpyDeviceToHost));
+    }
+    else // GPU without SHM
     {
         if(!is_window_paused)
         {
@@ -331,7 +349,8 @@ void display()
         }
 
         uint pixels_blocks_count = getBlocksCount(window_width * window_height);
-        d_colorBitmapFromParticles<<<pixels_blocks_count, BLOCK_SIZE>>>(d_bitmap, window_width, window_height, d_particles, particles_count);
+        d_colorBitmapFromParticles<<<pixels_blocks_count, BLOCK_SIZE>>>
+            (d_bitmap, window_width, window_height, d_particles, particles_count);
         checkCudaErrors(cudaMemcpy(h_bitmap, d_bitmap, window_width * window_height * 3 * sizeof(GLubyte), cudaMemcpyDeviceToHost));
     }
     
@@ -363,7 +382,7 @@ void cleanup()
         free(h_bitmap);
     }
 
-    if(calculations_mode == GPU)
+    if(calculations_mode == GPU || calculations_mode == GPU_SHM)
     {
         freeParticlesOnDevice(&d_particles);
     }
