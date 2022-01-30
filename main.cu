@@ -392,6 +392,9 @@ void cleanup()
 {
     sdkDeleteTimer(&timer);
 
+    printf("\n");
+    printf("Average frames per second: %3.1f\n", avg_fps);
+
     if(h_bitmap)
     {
         free(h_bitmap);
