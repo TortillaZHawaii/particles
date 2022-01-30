@@ -86,8 +86,8 @@ char calculations_mode = GPU;
 
 uint particles_count = 1024 * 10;
 
-uint window_width = 800;
-uint window_height = 600;
+uint window_width = 512;
+uint window_height = 512;
 
 // to pause and play the simulation
 bool is_window_paused = false;
@@ -152,6 +152,11 @@ void argumentsMessage()
     printf("Screen resolution: %dx%d\n", window_width, window_height);
     printf("Total pixels: %d\n", window_width * window_height);
     printf("Particles count: %d\n", particles_count);
+    if(calculations_mode != CPU) {
+        printf("\nBlock size (GPU): %d\n", BLOCK_SIZE);
+        printf("Block count for particles: %d\n", GET_BLOCKS_COUNT(particles_count));
+        printf("Block count for window: %d\n", GET_BLOCKS_COUNT(window_width * window_height));
+    }
 }
 
 void processArguments(int argc, char** argv)
@@ -337,11 +342,13 @@ void display()
             uint particles_blocks_count = GET_BLOCKS_COUNT(particles_count);
             dshm_steerParticles<<<particles_blocks_count, BLOCK_SIZE, shmSize>>>
                 (d_particles, particles_count, dt, window_width, window_height);
+            getLastCudaError("dshm_steerParticles");
         }
 
         uint pixels_blocks_count = GET_BLOCKS_COUNT(window_width * window_height);
         dshm_colorBitmapFromParticles<<<pixels_blocks_count, BLOCK_SIZE, shmSize>>>
             (d_bitmap, window_width, window_height, d_particles, particles_count);
+        getLastCudaError("dshm_colorBitmapFromParticles");
 
         checkCudaErrors(cudaMemcpy(h_bitmap, d_bitmap, window_width * window_height * 3 * sizeof(GLubyte), cudaMemcpyDeviceToHost));
     }
@@ -350,14 +357,15 @@ void display()
         if(!is_window_paused)
         {
             uint particles_blocks_count = GET_BLOCKS_COUNT(particles_count);
-            //printf("particles_blocks_count: %d\n", particles_blocks_count);
             d_steerParticles<<<particles_blocks_count, BLOCK_SIZE>>>(d_particles,
                 particles_count, dt, window_width, window_height);
+            getLastCudaError("d_steerParticles");
         }
 
         uint pixels_blocks_count = GET_BLOCKS_COUNT(window_width * window_height);
         d_colorBitmapFromParticles<<<pixels_blocks_count, BLOCK_SIZE>>>
             (d_bitmap, window_width, window_height, d_particles, particles_count);
+        getLastCudaError("d_colorBitmapFromParticles");
         checkCudaErrors(cudaMemcpy(h_bitmap, d_bitmap, window_width * window_height * 3 * sizeof(GLubyte), cudaMemcpyDeviceToHost));
     }
     
