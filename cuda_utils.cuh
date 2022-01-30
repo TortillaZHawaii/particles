@@ -3,9 +3,8 @@
 
 #define BLOCK_SIZE 1024
 
-__device__ __host__ uint getBlocksCount(uint value)
-{
-    return value / BLOCK_SIZE + (value % BLOCK_SIZE ? 1 : 0);
-}
+#ifndef GET_BLOCKS_COUNT
+#define GET_BLOCKS_COUNT(value) value / BLOCK_SIZE + (value % BLOCK_SIZE ? 1 : 0)
+#endif // GET_BLOCKS_COUNT
 
 #endif // CUDA_UTILS_H

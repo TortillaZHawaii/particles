@@ -64,10 +64,16 @@
 #include <helper_math.h>
 
 #include "cuda_utils.cuh"
-#include "calculations_utils.cuh"
 #include "setup.cuh"
 
+// kernels
+#include "kernels/cpu.cuh"
+#include "kernels/gpu.cuh"
+#include "kernels/shm.cuh"
+
+#ifndef MAX
 #define MAX(a,b) ((a > b) ? a : b)
+#endif
 
 #define REFRESH_DELAY 10 //ms
 
@@ -328,12 +334,12 @@ void display()
 
         if(!is_window_paused)
         {
-            uint particles_blocks_count = getBlocksCount(particles_count);
+            uint particles_blocks_count = GET_BLOCKS_COUNT(particles_count);
             dshm_steerParticles<<<particles_blocks_count, BLOCK_SIZE, shmSize>>>
                 (d_particles, particles_count, dt, window_width, window_height);
         }
 
-        uint pixels_blocks_count = getBlocksCount(window_width * window_height);
+        uint pixels_blocks_count = GET_BLOCKS_COUNT(window_width * window_height);
         dshm_colorBitmapFromParticles<<<pixels_blocks_count, BLOCK_SIZE, shmSize>>>
             (d_bitmap, window_width, window_height, d_particles, particles_count);
 
@@ -343,12 +349,13 @@ void display()
     {
         if(!is_window_paused)
         {
-            uint particles_blocks_count = getBlocksCount(particles_count);
+            uint particles_blocks_count = GET_BLOCKS_COUNT(particles_count);
+            //printf("particles_blocks_count: %d\n", particles_blocks_count);
             d_steerParticles<<<particles_blocks_count, BLOCK_SIZE>>>(d_particles,
                 particles_count, dt, window_width, window_height);
         }
 
-        uint pixels_blocks_count = getBlocksCount(window_width * window_height);
+        uint pixels_blocks_count = GET_BLOCKS_COUNT(window_width * window_height);
         d_colorBitmapFromParticles<<<pixels_blocks_count, BLOCK_SIZE>>>
             (d_bitmap, window_width, window_height, d_particles, particles_count);
         checkCudaErrors(cudaMemcpy(h_bitmap, d_bitmap, window_width * window_height * 3 * sizeof(GLubyte), cudaMemcpyDeviceToHost));
